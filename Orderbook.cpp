@@ -230,3 +230,27 @@ Trades Orderbook::ModifyOrder(OrderModify orderModify) {
   CancelOrderInternal(orderModify.GetOrderId());
   return AddOrderInternal(orderModify.ToOrderPointer(orderType));
 }
+
+std::string Orderbook::ToString() {
+  std::stringstream ss;
+  std::scoped_lock lock{orderbookMutex_};
+  ss << "Bid levels: ";
+  for (const auto& [price, orders] : bids_) {
+    ss << "$" << price << ": [";
+    for (size_t i = 0; i < orders.size(); ++i) {
+      ss << orders[i]->orderId_;
+      if (i < orders.size() - 1) ss << ", ";
+    }
+    ss << "] ";
+  }
+  ss << "Ask levels: ";
+  for (const auto& [price, orders] : asks_) {
+    ss << "($" << price << ": [";
+    for (size_t i = 0; i < orders.size(); ++i) {
+      ss << orders[i]->orderId_;
+      if (i < orders.size() - 1) ss << ", ";
+    }
+    ss << "]) ";
+  }
+  return ss.str();
+}

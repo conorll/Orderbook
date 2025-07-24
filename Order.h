@@ -3,14 +3,30 @@
 #include <deque>
 #include <exception>
 #include <format>
+#include <sstream>
 
 #include "Constants.h"
 #include "OrderType.h"
 #include "Side.h"
 #include "Usings.h"
 
+class Order;
+class Orderbook;
+
+using OrderPointer = std::shared_ptr<Order>;
+using OrderbookPointer = std::shared_ptr<Orderbook>;
+using OrderPointers = std::deque<OrderPointer>;
+
 class Order {
   friend class Orderbook;
+  friend void CheckOrderbookValidity(OrderbookPointer &orderbook);
+  friend void CheckOrdersMatch(OrderbookPointer &orderbook,
+                               std::vector<OrderPointer> &orders);
+  friend OrderPointer createPartiallyFilledOrder(OrderType orderType,
+                                                 OrderId orderId, Side side,
+                                                 Price price,
+                                                 Quantity initialQuantity,
+                                                 Quantity remainingQuantity);
 
  public:
   Order(OrderType orderType, OrderId orderId, Side side, Price price,
@@ -26,6 +42,7 @@ class Order {
       : Order(OrderType::Market, orderId, side, Constants::InvalidPrice,
               quantity) {}
 
+  bool operator==(const Order &) const = default;
   bool IsFilled() const { return remainingQuantity_ == 0; }
   void Fill(Quantity quantity) {
     if (quantity > remainingQuantity_)
@@ -45,6 +62,17 @@ class Order {
     orderType_ = OrderType::GoodTillCancel;
   }
 
+  std::string ToString() const {
+    std::ostringstream oss;
+    oss << "(type=" << orderType_ << ", id=" << orderId_ << ", side=" << side_
+        << ", price="
+        << (price_ == Constants::InvalidPrice ? "Market"
+                                              : ("$" + std::to_string(price_)))
+        << ", initialQty=" << initialQuantity_
+        << ", remainingQty=" << remainingQuantity_ << ")";
+    return oss.str();
+  }
+
  private:
   OrderType orderType_;
   OrderId orderId_;
@@ -53,6 +81,3 @@ class Order {
   Quantity initialQuantity_;
   Quantity remainingQuantity_;
 };
-
-using OrderPointer = std::shared_ptr<Order>;
-using OrderPointers = std::deque<OrderPointer>;

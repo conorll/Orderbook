@@ -11,7 +11,13 @@
 #include "Trade.h"
 #include "Usings.h"
 
+class Orderbook;
+
 class Orderbook {
+  friend void CheckOrderbookValidity(OrderbookPointer &orderbook);
+  friend void CheckOrdersMatch(OrderbookPointer &orderbook,
+                               std::vector<OrderPointer> &orders);
+
  private:
   struct LevelData {
     Quantity quantity_{};
@@ -49,4 +55,6 @@ class Orderbook {
   Trades AddOrder(OrderPointer order);
   void CancelOrder(OrderId orderId);
   Trades ModifyOrder(OrderModify order);
+
+  std::string ToString();
 };
