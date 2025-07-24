@@ -140,15 +140,9 @@ Trades Orderbook::MatchOrders() {
       OnOrderMatched(ask->price_, quantity, ask->IsFilled());
     }
 
-    if (bids.empty()) {
-      bids_.erase(bidPrice);
-      data_.erase(bidPrice);
-    }
+    if (bids.empty()) bids_.erase(bidPrice);
 
-    if (asks.empty()) {
-      asks_.erase(askPrice);
-      data_.erase(askPrice);
-    }
+    if (asks.empty()) asks_.erase(askPrice);
   }
 
   if (!bids_.empty()) {
