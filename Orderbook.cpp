@@ -164,7 +164,10 @@ Trades Orderbook::MatchOrders() {
 
 Trades Orderbook::AddOrder(OrderPointer order) {
   std::scoped_lock orderbookLock{orderbookMutex_};
+  return AddOrderInternal(order);
+}
 
+Trades Orderbook::AddOrderInternal(OrderPointer order) {
   if (orders_.contains(order->orderId_)) return {};
 
   if (order->orderType_ == OrderType::Market) {
@@ -212,18 +215,14 @@ void Orderbook::CancelOrder(OrderId orderId) {
   CancelOrderInternal(orderId);
 }
 
-Trades Orderbook::ModifyOrder(OrderModify order) {
-  OrderType orderType;
+Trades Orderbook::ModifyOrder(OrderModify orderModify) {
+  std::scoped_lock orderbookLock{orderbookMutex_};
 
-  {
-    std::scoped_lock orderbookLock{orderbookMutex_};
+  if (!orders_.contains(orderModify.GetOrderId())) return {};
 
-    if (!orders_.contains(order.GetOrderId())) return {};
+  const auto& existingOrder = orders_.at(orderModify.GetOrderId());
+  OrderType orderType = existingOrder->orderType_;
 
-    const auto& existingOrder = orders_.at(order.GetOrderId());
-    orderType = existingOrder->orderType_;
-  }
-
-  CancelOrder(order.GetOrderId());
-  return AddOrder(order.ToOrderPointer(orderType));
+  CancelOrderInternal(orderModify.GetOrderId());
+  return AddOrderInternal(orderModify.ToOrderPointer(orderType));
 }

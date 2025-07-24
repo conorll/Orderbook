@@ -30,6 +30,8 @@ class Orderbook {
   std::unordered_map<OrderId, OrderPointer> orders_;
   mutable std::mutex orderbookMutex_;
 
+  Trades AddOrderInternal(OrderPointer order);
+
   void CancelOrders(OrderIds orderIds);
   void CancelOrderInternal(OrderId orderId);
 
