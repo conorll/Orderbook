@@ -28,7 +28,7 @@ class Orderbook {
   std::map<Price, OrderPointers, std::greater<Price>> bids_;
   std::map<Price, OrderPointers, std::less<Price>> asks_;
   std::unordered_map<OrderId, OrderPointer> orders_;
-  mutable std::mutex ordersMutex_;
+  mutable std::mutex orderbookMutex_;
 
   void CancelOrders(OrderIds orderIds);
   void CancelOrderInternal(OrderId orderId);

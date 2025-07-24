@@ -5,7 +5,7 @@
 #include <numeric>
 
 void Orderbook::CancelOrders(OrderIds orderIds) {
-  std::scoped_lock ordersLock{ordersMutex_};
+  std::scoped_lock orderbookLock{orderbookMutex_};
 
   for (const auto& orderId : orderIds) CancelOrderInternal(orderId);
 }
@@ -169,7 +169,7 @@ Trades Orderbook::MatchOrders() {
 }
 
 Trades Orderbook::AddOrder(OrderPointer order) {
-  std::scoped_lock ordersLock{ordersMutex_};
+  std::scoped_lock orderbookLock{orderbookMutex_};
 
   if (orders_.contains(order->orderId_)) return {};
 
@@ -213,7 +213,7 @@ Trades Orderbook::AddOrder(OrderPointer order) {
 }
 
 void Orderbook::CancelOrder(OrderId orderId) {
-  std::scoped_lock ordersLock{ordersMutex_};
+  std::scoped_lock orderbookLock{orderbookMutex_};
 
   CancelOrderInternal(orderId);
 }
@@ -222,7 +222,7 @@ Trades Orderbook::ModifyOrder(OrderModify order) {
   OrderType orderType;
 
   {
-    std::scoped_lock ordersLock{ordersMutex_};
+    std::scoped_lock orderbookLock{orderbookMutex_};
 
     if (!orders_.contains(order.GetOrderId())) return {};
 
