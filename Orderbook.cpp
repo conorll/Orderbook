@@ -55,11 +55,10 @@ void Orderbook::UpdateLevelData(Price price, Quantity quantity,
   data.count_ += action == LevelData::Action::Remove ? -1
                  : action == LevelData::Action::Add  ? 1
                                                      : 0;
-  if (action == LevelData::Action::Remove ||
-      action == LevelData::Action::Match) {
-    data.quantity_ -= quantity;
-  } else {
+  if (action == LevelData::Action::Add) {
     data.quantity_ += quantity;
+  } else {
+    data.quantity_ -= quantity;
   }
 
   if (data.count_ == 0) data_.erase(price);
@@ -68,29 +67,15 @@ void Orderbook::UpdateLevelData(Price price, Quantity quantity,
 bool Orderbook::CanFullyFill(Side side, Price price, Quantity quantity) const {
   if (!CanMatch(side, price)) return false;
 
-  std::optional<Price> threshold;
-
-  if (side == Side::Buy) {
-    const auto [askPrice, _] = *asks_.begin();
-    threshold = askPrice;
-  } else {
-    const auto [bidPrice, _] = *bids_.begin();
-    threshold = bidPrice;
-  }
+  Quantity available = 0;
 
   for (const auto& [levelPrice, levelData] : data_) {
-    if (threshold.has_value() &&
-            (side == Side::Buy && threshold.value() > levelPrice) ||
-        (side == Side::Sell && threshold.value() < levelPrice))
-      continue;
+    if (side == Side::Buy && price >= levelPrice)
+      available += levelData.quantity_;
+    if (side == Side::Sell && price <= levelPrice)
+      available += levelData.quantity_;
 
-    if ((side == Side::Buy && levelPrice > price) ||
-        (side == Side::Sell && levelPrice < price))
-      continue;
-
-    if (quantity <= levelData.quantity_) return true;
-
-    quantity -= levelData.quantity_;
+    if (quantity <= available) return true;
   }
 
   return false;
@@ -183,14 +168,15 @@ Trades Orderbook::AddOrder(OrderPointer order) {
   if (orders_.contains(order->orderId_)) return {};
 
   if (order->orderType_ == OrderType::Market) {
-    if (order->side_ == Side::Buy && !asks_.empty()) {
+    if (order->side_ == Side::Buy) {
+      if (asks_.empty()) return {};
       const auto& [worstAsk, _] = *asks_.rbegin();
       order->ToGoodTillCancel(worstAsk);
-    } else if (order->side_ == Side::Sell && !bids_.empty()) {
+    } else {
+      if (bids_.empty()) return {};
       const auto& [worstBid, _] = *bids_.rbegin();
       order->ToGoodTillCancel(worstBid);
-    } else
-      return {};
+    }
   }
 
   if (order->orderType_ == OrderType::FillAndKill &&
