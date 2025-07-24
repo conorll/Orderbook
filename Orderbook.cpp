@@ -149,14 +149,14 @@ Trades Orderbook::MatchOrders() {
     auto& [_, bids] = *bids_.begin();
     auto& order = bids.front();
     if (order->orderType_ == OrderType::FillAndKill)
-      CancelOrder(order->orderId_);
+      CancelOrderInternal(order->orderId_);
   }
 
   if (!asks_.empty()) {
     auto& [_, asks] = *asks_.begin();
     auto& order = asks.front();
     if (order->orderType_ == OrderType::FillAndKill)
-      CancelOrder(order->orderId_);
+      CancelOrderInternal(order->orderId_);
   }
 
   return trades;
