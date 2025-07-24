@@ -13,18 +13,24 @@ void Orderbook::CancelOrders(OrderIds orderIds) {
 void Orderbook::CancelOrderInternal(OrderId orderId) {
   if (!orders_.contains(orderId)) return;
 
-  const auto [order, iterator] = orders_.at(orderId);
+  const auto order = orders_.at(orderId);
   orders_.erase(orderId);
 
   if (order->side_ == Side::Sell) {
     auto price = order->price_;
     auto& orders = asks_.at(price);
-    orders.erase(iterator);
+
+    auto it = std::find(orders.begin(), orders.end(), order);
+    orders.erase(it);
+
     if (orders.empty()) asks_.erase(price);
   } else {
     auto price = order->price_;
     auto& orders = bids_.at(price);
-    orders.erase(iterator);
+
+    auto it = std::find(orders.begin(), orders.end(), order);
+    orders.erase(it);
+
     if (orders.empty()) bids_.erase(price);
   }
 
@@ -199,7 +205,7 @@ Trades Orderbook::AddOrder(OrderPointer order) {
     iterator = std::prev(orders.end());
   }
 
-  orders_.insert({order->orderId_, OrderEntry{order, iterator}});
+  orders_.insert({order->orderId_, order});
 
   OnOrderAdded(order);
 
@@ -220,7 +226,7 @@ Trades Orderbook::ModifyOrder(OrderModify order) {
 
     if (!orders_.contains(order.GetOrderId())) return {};
 
-    const auto& [existingOrder, _] = orders_.at(order.GetOrderId());
+    const auto& existingOrder = orders_.at(order.GetOrderId());
     orderType = existingOrder->orderType_;
   }
 

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <deque>
 #include <exception>
 #include <format>
-#include <list>
 
 #include "Constants.h"
 #include "OrderType.h"
@@ -55,4 +55,4 @@ class Order {
 };
 
 using OrderPointer = std::shared_ptr<Order>;
-using OrderPointers = std::list<OrderPointer>;
+using OrderPointers = std::deque<OrderPointer>;

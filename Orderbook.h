@@ -14,11 +14,6 @@
 
 class Orderbook {
  private:
-  struct OrderEntry {
-    OrderPointer order_{nullptr};
-    OrderPointers::iterator location_;
-  };
-
   struct LevelData {
     Quantity quantity_{};
     Quantity count_{};
@@ -33,7 +28,7 @@ class Orderbook {
   std::unordered_map<Price, LevelData> data_;
   std::map<Price, OrderPointers, std::greater<Price>> bids_;
   std::map<Price, OrderPointers, std::less<Price>> asks_;
-  std::unordered_map<OrderId, OrderEntry> orders_;
+  std::unordered_map<OrderId, OrderPointer> orders_;
   mutable std::mutex ordersMutex_;
 
   void CancelOrders(OrderIds orderIds);
