@@ -17,6 +17,8 @@ class Orderbook {
   friend void CheckOrderbookValidity(OrderbookPointer &orderbook);
   friend void CheckOrdersMatch(OrderbookPointer &orderbook,
                                std::vector<OrderPointer> &orders);
+  friend bool DoOrdersMatch(OrderbookPointer &orderbook,
+                            std::vector<OrderPointer> &orders);
 
  private:
   struct LevelData {

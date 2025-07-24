@@ -283,6 +283,36 @@ void CheckOrdersMatch(OrderbookPointer &orderbook,
   }
 }
 
+bool DoOrdersMatch(OrderbookPointer &orderbook,
+                   std::vector<OrderPointer> &orders) {
+  if (HasDuplicates(orders))
+    throw std::logic_error("Order vector contains duplicate entries");
+
+  std::scoped_lock orderbookLock{orderbook->orderbookMutex_};
+
+  for (const auto &order : orders)
+    if (!orderbook->orders_.contains(order->orderId_)) return false;
+
+  std::unordered_set<OrderId> ordersSet;
+  for (const auto &order : orders) ordersSet.insert(order->orderId_);
+
+  for (const auto &[orderId, _] : orderbook->orders_)
+    if (!ordersSet.contains(orderId)) return false;
+
+  for (const auto &order : orders) {
+    const auto &orderInOrderbook = orderbook->orders_.at(order->orderId_);
+    if (*order != *orderInOrderbook) return false;
+  }
+
+  for (const auto &[price, levelOrders] : orderbook->bids_)
+    if (!IsSubsequence(orders, levelOrders)) return false;
+
+  for (const auto &[price, levelOrders] : orderbook->asks_)
+    if (!IsSubsequence(orders, levelOrders)) return false;
+
+  return true;
+}
+
 OrderPointer createPartiallyFilledOrder(OrderType orderType, OrderId orderId,
                                         Side side, Price price,
                                         Quantity initialQuantity,
@@ -292,6 +322,19 @@ OrderPointer createPartiallyFilledOrder(OrderType orderType, OrderId orderId,
   order->remainingQuantity_ = remainingQuantity;
 
   return order;
+}
+
+std::string OrdersToString(const std::vector<OrderPointer> &orders) {
+  std::stringstream ss;
+  ss << "[";
+  for (size_t i = 0; i < orders.size(); ++i) {
+    if (orders[i]) {
+      ss << orders[i]->ToString();
+      if (i < orders.size() - 1) ss << ", ";
+    }
+  }
+  ss << "]";
+  return ss.str();
 }
 
 TEST(OrderbookTest, Add) {
@@ -778,4 +821,276 @@ TEST(OrderbookTest, Market_EmptyOrderbook) {
 
   CheckOrderbookValidity(orderbook);
   CheckOrdersMatch(orderbook, expectedOrders);
+}
+
+TEST(OrderbookTest, Concurrent_Add) {
+  auto orderbook = std::make_shared<Orderbook>();
+  std::vector<std::thread> threads;
+  std::vector<OrderPointer> orders;
+
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 1,
+                                           Side::Sell, 100, 10));
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 2,
+                                           Side::Sell, 100, 6));
+
+  std::barrier barrier(orders.size());
+
+  for (const auto &order : orders) {
+    threads.emplace_back([&orderbook, &order, &barrier]() {
+      barrier.arrive_and_wait();
+      orderbook->AddOrder(order);
+    });
+  }
+
+  for (auto &thread : threads) thread.join();
+
+  std::vector<OrderPointer> expectedOrders1;
+
+  expectedOrders1.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    1, Side::Sell, 100, 10));
+  expectedOrders1.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    2, Side::Sell, 100, 6));
+
+  std::vector<OrderPointer> expectedOrders2;
+
+  expectedOrders2.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    2, Side::Sell, 100, 6));
+  expectedOrders2.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    1, Side::Sell, 100, 10));
+
+  CheckOrderbookValidity(orderbook);
+
+  ASSERT_EQ((DoOrdersMatch(orderbook, expectedOrders1) ||
+             DoOrdersMatch(orderbook, expectedOrders2)),
+            true)
+      << "Orderbook does not match any expected state.\n"
+      << "Expected state 1: " << OrdersToString(expectedOrders1) << "\n"
+      << "Expected state 2: " << OrdersToString(expectedOrders2) << "\n"
+      << "Actual orderbook: " << orderbook->ToString();
+}
+
+TEST(OrderbookTest, Concurrent_GoodTillCancel) {
+  auto orderbook = std::make_shared<Orderbook>();
+  std::vector<std::thread> threads;
+  std::vector<OrderPointer> orders;
+
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 1,
+                                           Side::Buy, 100, 20));
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 2,
+                                           Side::Buy, 100, 30));
+  orders.push_back(
+      std::make_shared<Order>(OrderType::GoodTillCancel, 3, Side::Sell, 99, 5));
+
+  std::barrier barrier(orders.size());
+
+  for (const auto &order : orders) {
+    threads.emplace_back([&orderbook, &order, &barrier]() {
+      barrier.arrive_and_wait();
+      orderbook->AddOrder(order);
+    });
+  }
+
+  for (auto &thread : threads) thread.join();
+
+  std::vector<OrderPointer> expectedOrders1;
+
+  expectedOrders1.push_back(createPartiallyFilledOrder(
+      OrderType::GoodTillCancel, 1, Side::Buy, 100, 20, 15));
+  expectedOrders1.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    2, Side::Buy, 100, 30));
+
+  std::vector<OrderPointer> expectedOrders2;
+
+  expectedOrders2.push_back(createPartiallyFilledOrder(
+      OrderType::GoodTillCancel, 2, Side::Buy, 100, 30, 25));
+  expectedOrders2.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    1, Side::Buy, 100, 20));
+
+  CheckOrderbookValidity(orderbook);
+
+  ASSERT_EQ((DoOrdersMatch(orderbook, expectedOrders1) ||
+             DoOrdersMatch(orderbook, expectedOrders2)),
+            true)
+      << "Orderbook does not match any expected state.\n"
+      << "Expected state 1: " << OrdersToString(expectedOrders1) << "\n"
+      << "Expected state 2: " << OrdersToString(expectedOrders2) << "\n"
+      << "Actual orderbook: " << orderbook->ToString();
+}
+
+TEST(OrderbookTest, Concurrent_FillAndKill) {
+  auto orderbook = std::make_shared<Orderbook>();
+  std::vector<std::thread> threads;
+  std::vector<OrderPointer> orders;
+
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 1,
+                                           Side::Buy, 101, 40));
+  orders.push_back(
+      std::make_shared<Order>(OrderType::FillAndKill, 2, Side::Sell, 99, 30));
+
+  std::barrier barrier(orders.size());
+
+  for (const auto &order : orders) {
+    threads.emplace_back([&orderbook, &order, &barrier]() {
+      barrier.arrive_and_wait();
+      orderbook->AddOrder(order);
+    });
+  }
+
+  for (auto &thread : threads) thread.join();
+
+  std::vector<OrderPointer> expectedOrders1;
+
+  expectedOrders1.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    1, Side::Buy, 101, 40));
+
+  std::vector<OrderPointer> expectedOrders2;
+
+  expectedOrders2.push_back(createPartiallyFilledOrder(
+      OrderType::GoodTillCancel, 1, Side::Buy, 101, 40, 10));
+
+  CheckOrderbookValidity(orderbook);
+
+  ASSERT_EQ((DoOrdersMatch(orderbook, expectedOrders1) ||
+             DoOrdersMatch(orderbook, expectedOrders2)),
+            true)
+      << "Orderbook does not match any expected state.\n"
+      << "Expected state 1: " << OrdersToString(expectedOrders1) << "\n"
+      << "Expected state 2: " << OrdersToString(expectedOrders2) << "\n"
+      << "Actual orderbook: " << orderbook->ToString();
+}
+
+TEST(OrderbookTest, Concurrent_FillOrKill) {
+  auto orderbook = std::make_shared<Orderbook>();
+  std::vector<std::thread> threads;
+  std::vector<OrderPointer> orders;
+
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 1,
+                                           Side::Buy, 101, 40));
+  orders.push_back(
+      std::make_shared<Order>(OrderType::FillOrKill, 2, Side::Sell, 99, 30));
+
+  std::barrier barrier(orders.size());
+
+  for (const auto &order : orders) {
+    threads.emplace_back([&orderbook, &order, &barrier]() {
+      barrier.arrive_and_wait();
+      orderbook->AddOrder(order);
+    });
+  }
+
+  for (auto &thread : threads) thread.join();
+
+  std::vector<OrderPointer> expectedOrders1;
+
+  expectedOrders1.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    1, Side::Buy, 101, 40));
+
+  std::vector<OrderPointer> expectedOrders2;
+
+  expectedOrders2.push_back(createPartiallyFilledOrder(
+      OrderType::GoodTillCancel, 1, Side::Buy, 101, 40, 10));
+
+  CheckOrderbookValidity(orderbook);
+
+  ASSERT_EQ((DoOrdersMatch(orderbook, expectedOrders1) ||
+             DoOrdersMatch(orderbook, expectedOrders2)),
+            true)
+      << "Orderbook does not match any expected state.\n"
+      << "Expected state 1: " << OrdersToString(expectedOrders1) << "\n"
+      << "Expected state 2: " << OrdersToString(expectedOrders2) << "\n"
+      << "Actual orderbook: " << orderbook->ToString();
+}
+
+TEST(OrderbookTest, Concurrent_MarketOrder) {
+  auto orderbook = std::make_shared<Orderbook>();
+  std::vector<std::thread> threads;
+  std::vector<OrderPointer> orders;
+
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 1,
+                                           Side::Buy, 101, 20));
+  orders.push_back(std::make_shared<Order>(2, Side::Sell, 50));
+
+  std::barrier barrier(orders.size());
+
+  for (const auto &order : orders) {
+    threads.emplace_back([&orderbook, &order, &barrier]() {
+      barrier.arrive_and_wait();
+      orderbook->AddOrder(order);
+    });
+  }
+
+  for (auto &thread : threads) thread.join();
+
+  std::vector<OrderPointer> expectedOrders1;
+
+  expectedOrders1.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    1, Side::Buy, 101, 20));
+
+  std::vector<OrderPointer> expectedOrders2;
+
+  expectedOrders2.push_back(createPartiallyFilledOrder(
+      OrderType::GoodTillCancel, 2, Side::Sell, 101, 50, 30));
+
+  CheckOrderbookValidity(orderbook);
+
+  ASSERT_EQ((DoOrdersMatch(orderbook, expectedOrders1) ||
+             DoOrdersMatch(orderbook, expectedOrders2)),
+            true)
+      << "Orderbook does not match any expected state.\n"
+      << "Expected state 1: " << OrdersToString(expectedOrders1) << "\n"
+      << "Expected state 2: " << OrdersToString(expectedOrders2) << "\n"
+      << "Actual orderbook: " << orderbook->ToString();
+}
+
+TEST(OrderbookTest, Concurrent_Modify) {
+  auto orderbook = std::make_shared<Orderbook>();
+  std::vector<std::thread> threads;
+  std::vector<OrderPointer> orders;
+
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 1,
+                                           Side::Sell, 100, 10));
+  orders.push_back(std::make_shared<Order>(OrderType::GoodTillCancel, 2,
+                                           Side::Sell, 100, 6));
+
+  for (const auto &order : orders) orderbook->AddOrder(order);
+
+  std::vector<OrderModify> orderModifies;
+
+  orderModifies.push_back(OrderModify(1, Side::Buy, 99, 50));
+  orderModifies.push_back(OrderModify(1, Side::Buy, 98, 20));
+
+  std::barrier barrier(orderModifies.size());
+
+  for (const auto &orderModify : orderModifies) {
+    threads.emplace_back([&orderbook, &orderModify, &barrier]() {
+      barrier.arrive_and_wait();
+      orderbook->ModifyOrder(orderModify);
+    });
+  }
+
+  for (auto &thread : threads) thread.join();
+
+  std::vector<OrderPointer> expectedOrders1;
+
+  expectedOrders1.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    2, Side::Sell, 100, 6));
+  expectedOrders1.push_back(
+      std::make_shared<Order>(OrderType::GoodTillCancel, 1, Side::Buy, 99, 50));
+
+  std::vector<OrderPointer> expectedOrders2;
+
+  expectedOrders2.push_back(std::make_shared<Order>(OrderType::GoodTillCancel,
+                                                    2, Side::Sell, 100, 6));
+  expectedOrders2.push_back(
+      std::make_shared<Order>(OrderType::GoodTillCancel, 1, Side::Buy, 98, 20));
+
+  CheckOrderbookValidity(orderbook);
+
+  ASSERT_EQ((DoOrdersMatch(orderbook, expectedOrders1) ||
+             DoOrdersMatch(orderbook, expectedOrders2)),
+            true)
+      << "Orderbook does not match any expected state.\n"
+      << "Expected state 1: " << OrdersToString(expectedOrders1) << "\n"
+      << "Expected state 2: " << OrdersToString(expectedOrders2) << "\n"
+      << "Actual orderbook: " << orderbook->ToString();
 }

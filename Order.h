@@ -27,6 +27,8 @@ class Order {
                                                  Price price,
                                                  Quantity initialQuantity,
                                                  Quantity remainingQuantity);
+  friend bool DoOrdersMatch(OrderbookPointer &orderbook,
+                            std::vector<OrderPointer> &orders);
 
  public:
   Order(OrderType orderType, OrderId orderId, Side side, Price price,
