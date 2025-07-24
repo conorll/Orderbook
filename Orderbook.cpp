@@ -4,6 +4,8 @@
 #include <ctime>
 #include <numeric>
 
+#include "Exceptions.h"
+
 void Orderbook::CancelOrders(OrderIds orderIds) {
   std::scoped_lock orderbookLock{orderbookMutex_};
 
@@ -11,7 +13,7 @@ void Orderbook::CancelOrders(OrderIds orderIds) {
 }
 
 void Orderbook::CancelOrderInternal(OrderId orderId) {
-  if (!orders_.contains(orderId)) return;
+  if (!orders_.contains(orderId)) throw OrderNotFoundException(orderId);
 
   const auto order = orders_.at(orderId);
   orders_.erase(orderId);
@@ -168,7 +170,8 @@ Trades Orderbook::AddOrder(OrderPointer order) {
 }
 
 Trades Orderbook::AddOrderInternal(OrderPointer order) {
-  if (orders_.contains(order->orderId_)) return {};
+  if (orders_.contains(order->orderId_))
+    throw DuplicateOrderIdException(order->orderId_);
 
   if (order->orderType_ == OrderType::Market) {
     if (order->side_ == Side::Buy) {
@@ -218,7 +221,8 @@ void Orderbook::CancelOrder(OrderId orderId) {
 Trades Orderbook::ModifyOrder(OrderModify orderModify) {
   std::scoped_lock orderbookLock{orderbookMutex_};
 
-  if (!orders_.contains(orderModify.GetOrderId())) return {};
+  if (!orders_.contains(orderModify.GetOrderId()))
+    throw OrderNotFoundException(orderModify.GetOrderId());
 
   const auto& existingOrder = orders_.at(orderModify.GetOrderId());
   OrderType orderType = existingOrder->orderType_;
