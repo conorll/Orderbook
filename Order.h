@@ -5,30 +5,26 @@
 #include <format>
 #include <sstream>
 
-#include "Constants.h"
 #include "OrderType.h"
 #include "Side.h"
-#include "Usings.h"
+#include "concepts/Params.h"
 
+template <ValidTypes Types>
 class Order;
-class Orderbook;
 
-using OrderPointer = std::shared_ptr<Order>;
-using OrderbookPointer = std::shared_ptr<Orderbook>;
-using OrderPointers = std::deque<OrderPointer>;
+template <ValidTypes Types>
+using OrderPointer = std::shared_ptr<Order<Types>>;
 
+template <ValidTypes Types>
 class Order {
+  template <ValidParams Params>
   friend class Orderbook;
-  friend void CheckOrderbookValidity(OrderbookPointer &orderbook);
-  friend void CheckOrdersMatch(OrderbookPointer &orderbook,
-                               std::vector<OrderPointer> &orders);
-  friend OrderPointer createPartiallyFilledOrder(OrderType orderType,
-                                                 OrderId orderId, Side side,
-                                                 Price price,
-                                                 Quantity initialQuantity,
-                                                 Quantity remainingQuantity);
-  friend bool DoOrdersMatch(OrderbookPointer &orderbook,
-                            std::vector<OrderPointer> &orders);
+
+  using Price = typename Types::Price;
+  using Quantity = typename Types::Quantity;
+  using OrderId = typename Types::OrderId;
+
+  static constexpr Price MarketOrderPrice = Price{0};
 
  public:
   Order(OrderType orderType, OrderId orderId, Side side, Price price,
@@ -41,10 +37,9 @@ class Order {
         remainingQuantity_{quantity} {}
 
   Order(OrderId orderId, Side side, Quantity quantity)
-      : Order(OrderType::Market, orderId, side, Constants::InvalidPrice,
-              quantity) {}
+      : Order(OrderType::Market, orderId, side, MarketOrderPrice, quantity) {}
 
-  bool operator==(const Order &) const = default;
+  bool operator==(const Order&) const = default;
   bool IsFilled() const { return remainingQuantity_ == 0; }
   void Fill(Quantity quantity) {
     if (quantity > remainingQuantity_)
@@ -68,8 +63,8 @@ class Order {
     std::ostringstream oss;
     oss << "(type=" << orderType_ << ", id=" << orderId_ << ", side=" << side_
         << ", price="
-        << (price_ == Constants::InvalidPrice ? "Market"
-                                              : ("$" + std::to_string(price_)))
+        << (orderType_ == OrderType::Market ? "Market"
+                                            : ("$" + std::to_string(price_)))
         << ", initialQty=" << initialQuantity_
         << ", remainingQty=" << remainingQuantity_ << ")";
     return oss.str();

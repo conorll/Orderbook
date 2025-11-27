@@ -4,12 +4,17 @@
 #include <stdexcept>
 #include <string>
 
-#include "Usings.h"
+#include "concepts/Types.h"
 
 // expection messages are stored as member variables to avoid constructing a new
 // string each time what() is called
 
+template <ValidTypes Types>
 class DuplicateOrderIdException : public std::exception {
+  using Price = typename Types::Price;
+  using Quantity = typename Types::Quantity;
+  using OrderId = typename Types::OrderId;
+
  public:
   DuplicateOrderIdException(OrderId orderId)
       : orderId_(orderId),
@@ -22,7 +27,12 @@ class DuplicateOrderIdException : public std::exception {
   std::string message_;
 };
 
+template <ValidTypes Types>
 class OrderNotFoundException : public std::exception {
+  using Price = typename Types::Price;
+  using Quantity = typename Types::Quantity;
+  using OrderId = typename Types::OrderId;
+
  public:
   OrderNotFoundException(OrderId orderId)
       : orderId_(orderId),

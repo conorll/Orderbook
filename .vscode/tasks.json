@@ -9,7 +9,6 @@
         "-fdiagnostics-color=always",
         "-g",
         "main.cpp",
-        "Orderbook.cpp",
         "-o",
         "${fileDirname}/orderbook"
       ],
